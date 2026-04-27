@@ -338,6 +338,117 @@ button.tbtn:disabled {
 .preset:hover { filter: brightness(1.1); }
 .preset:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,0.3); }
 
+/* Song picker (custom vintage dropdown) */
+.song-picker {
+  position: relative;
+  display: inline-block;
+  min-width: 180px;
+  flex: 1 1 180px;
+  max-width: 280px;
+}
+.song-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(180deg, var(--brass), var(--brass-dark));
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  padding: 8px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-transform: uppercase;
+  text-align: left;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.4),
+    0 2px 4px rgba(0,0,0,0.4);
+  transition: filter 0.1s;
+}
+.song-trigger:hover { filter: brightness(1.08); }
+.song-trigger:focus-visible {
+  outline: 2px solid var(--glow);
+  outline-offset: 2px;
+}
+.song-trigger.open {
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.35);
+}
+.song-trigger-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.song-trigger-caret {
+  font-size: 14px;
+  color: var(--ink);
+  opacity: 0.75;
+  transition: transform 0.15s;
+}
+.song-trigger.open .song-trigger-caret { transform: rotate(180deg); }
+
+.song-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  background: linear-gradient(180deg, #0a0500, #1a0e02);
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 0 30px rgba(0,0,0,0.9),
+    inset 0 0 50px rgba(255,138,31,0.06),
+    0 8px 20px rgba(0,0,0,0.6);
+  max-height: 260px;
+  overflow-y: auto;
+  font-family: 'VT323', monospace;
+  color: var(--glow);
+  text-shadow: 0 0 6px var(--glow-soft);
+}
+.song-list[hidden] { display: none; }
+.song-list::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg,
+    rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0.25) 2px, rgba(0,0,0,0.25) 3px);
+  pointer-events: none;
+  border-radius: 2px;
+}
+.song-option {
+  position: relative;
+  padding: 6px 10px;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid transparent;
+}
+.song-option:hover,
+.song-option.focused {
+  background: rgba(255, 138, 31, 0.12);
+  border-color: rgba(255, 138, 31, 0.4);
+  text-shadow: 0 0 8px var(--glow-soft), 0 0 16px var(--glow-soft);
+}
+.song-option.selected::before {
+  content: '▸';
+  margin-right: 6px;
+  opacity: 0.9;
+}
+@media (max-width: 720px) {
+  .song-picker { min-width: 0; max-width: none; flex: 1 1 100%; }
+}
+
 .row-2col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -389,9 +500,14 @@ footer {
       <button class="tbtn" id="loopBtn"><span class="led" id="loopLed"></span>LOOP</button>
       <button class="tbtn" id="bypassBtn"><span class="led on" id="fxLed"></span>FX</button>
       <span style="font-family:'VT323',monospace;font-size:14px;letter-spacing:0.15em;color:var(--ink-soft);">TUNE</span>
-      <select id="songPicker" class="tbtn" style="font-family:'VT323',monospace;font-size:16px;padding:8px 10px;">
-        <option value="">— Select a song —</option>
-      </select>
+      <div class="song-picker" id="songPicker">
+        <button type="button" class="song-trigger" id="songTrigger"
+                aria-haspopup="listbox" aria-expanded="false" aria-label="Select built-in song">
+          <span class="song-trigger-label" id="songTriggerLabel">— Select a song —</span>
+          <span class="song-trigger-caret" aria-hidden="true">▾</span>
+        </button>
+        <ul class="song-list" id="songList" role="listbox" hidden tabindex="-1"></ul>
+      </div>
       <div class="spacer"></div>
       <span style="font-family:'VT323',monospace;font-size:14px;letter-spacing:0.15em;color:var(--ink-soft);">VOL</span>
       <input type="range" id="volume" min="0" max="100" value="80" style="width:120px;">
@@ -861,18 +977,74 @@ const builtinSongs = [
   'Soft Hold Tone.mp3',
 ];
 
-const songPicker = document.getElementById('songPicker');
-builtinSongs.forEach(name => {
-  const opt = document.createElement('option');
-  opt.value = name;
-  opt.textContent = name.replace(/\.mp3$/i, '');
-  songPicker.appendChild(opt);
+const songTrigger = document.getElementById('songTrigger');
+const songTriggerLabel = document.getElementById('songTriggerLabel');
+const songList = document.getElementById('songList');
+let songOptions = [];
+let songFocusIndex = -1;
+let songSelectedIndex = -1;
+
+builtinSongs.forEach((name, i) => {
+  const li = document.createElement('li');
+  li.className = 'song-option';
+  li.setAttribute('role', 'option');
+  li.id = 'song-opt-' + i;
+  li.dataset.index = String(i);
+  li.dataset.value = name;
+  li.textContent = name.replace(/\.mp3$/i, '');
+  li.setAttribute('aria-selected', 'false');
+  li.addEventListener('mouseenter', () => setSongFocus(i));
+  li.addEventListener('click', () => selectSong(i));
+  songList.appendChild(li);
+  songOptions.push(li);
 });
 
-songPicker.addEventListener('click', e => e.stopPropagation());
-songPicker.addEventListener('change', async e => {
-  const name = e.target.value;
-  if (!name) return;
+function isSongOpen() { return !songList.hasAttribute('hidden'); }
+
+function openSongList() {
+  if (isSongOpen()) return;
+  songList.removeAttribute('hidden');
+  songTrigger.classList.add('open');
+  songTrigger.setAttribute('aria-expanded', 'true');
+  setSongFocus(songSelectedIndex >= 0 ? songSelectedIndex : 0);
+}
+
+function closeSongList() {
+  if (!isSongOpen()) return;
+  songList.setAttribute('hidden', '');
+  songTrigger.classList.remove('open');
+  songTrigger.setAttribute('aria-expanded', 'false');
+  songTrigger.removeAttribute('aria-activedescendant');
+  setSongFocus(-1);
+}
+
+function setSongFocus(i) {
+  if (songFocusIndex >= 0 && songOptions[songFocusIndex]) {
+    songOptions[songFocusIndex].classList.remove('focused');
+  }
+  songFocusIndex = i;
+  if (i >= 0 && songOptions[i]) {
+    songOptions[i].classList.add('focused');
+    songTrigger.setAttribute('aria-activedescendant', songOptions[i].id);
+    songOptions[i].scrollIntoView({ block: 'nearest' });
+  }
+}
+
+async function selectSong(i) {
+  const li = songOptions[i];
+  if (!li) return;
+  if (songSelectedIndex >= 0 && songOptions[songSelectedIndex]) {
+    songOptions[songSelectedIndex].classList.remove('selected');
+    songOptions[songSelectedIndex].setAttribute('aria-selected', 'false');
+  }
+  songSelectedIndex = i;
+  li.classList.add('selected');
+  li.setAttribute('aria-selected', 'true');
+  songTriggerLabel.textContent = li.textContent;
+  closeSongList();
+  songTrigger.focus();
+
+  const name = li.dataset.value;
   await initAudio();
   setStatus('LOADING ' + name.toUpperCase());
   try {
@@ -886,6 +1058,49 @@ songPicker.addEventListener('change', async e => {
     setStatus('FETCH ERROR — ' + (err.message || 'CHECK music/ FOLDER'));
     console.error(err);
   }
+}
+
+songTrigger.addEventListener('click', e => {
+  e.stopPropagation();
+  isSongOpen() ? closeSongList() : openSongList();
+});
+
+songTrigger.addEventListener('keydown', e => {
+  switch (e.key) {
+    case 'Enter':
+    case ' ':
+      e.preventDefault();
+      if (isSongOpen()) {
+        if (songFocusIndex >= 0) selectSong(songFocusIndex);
+      } else {
+        openSongList();
+      }
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      if (!isSongOpen()) { openSongList(); break; }
+      setSongFocus(Math.min(songOptions.length - 1, songFocusIndex + 1));
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      if (!isSongOpen()) { openSongList(); break; }
+      setSongFocus(Math.max(0, songFocusIndex - 1));
+      break;
+    case 'Home':
+      if (isSongOpen()) { e.preventDefault(); setSongFocus(0); }
+      break;
+    case 'End':
+      if (isSongOpen()) { e.preventDefault(); setSongFocus(songOptions.length - 1); }
+      break;
+    case 'Escape':
+      if (isSongOpen()) { e.preventDefault(); closeSongList(); }
+      break;
+  }
+});
+
+document.addEventListener('click', e => {
+  if (!isSongOpen()) return;
+  if (!document.getElementById('songPicker').contains(e.target)) closeSongList();
 });
 
 function setStatus(s) { statusEl.textContent = s; }
