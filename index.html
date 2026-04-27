@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AM-IFY · Web Audio Radio Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #1a120c;
+  --bg-deep: #0f0a06;
+  --panel: #d4c19a;
+  --panel-shadow: #a8956d;
+  --panel-highlight: #efdfb8;
+  --wood: #3a2412;
+  --wood-light: #5a3a1f;
+  --ink: #2a1d10;
+  --ink-soft: #5c4530;
+  --brass: #c89a4f;
+  --brass-dark: #8a6628;
+  --glow: #ff8a1f;
+  --glow-soft: rgba(255, 138, 31, 0.35);
+  --led-off: #3a2818;
+  --scope: #ffb347;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background:
+    radial-gradient(ellipse at 50% 0%, #2a1810 0%, var(--bg-deep) 70%),
+    var(--bg-deep);
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: 'Fraunces', Georgia, serif;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 3px);
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.4;
+}
+
+.cabinet {
+  max-width: 980px;
+  margin: 24px auto;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, var(--wood-light) 0%, var(--wood) 100%);
+  border-radius: 14px;
+  box-shadow:
+    0 30px 80px rgba(0,0,0,0.6),
+    inset 0 0 0 1px rgba(255,200,140,0.08),
+    inset 0 2px 0 rgba(255,200,140,0.15);
+  position: relative;
+  z-index: 2;
+}
+
+.cabinet::before {
+  content: '';
+  position: absolute; inset: 4px;
+  border-radius: 11px;
+  background-image:
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 1px,
+      transparent 1px, transparent 5px),
+    repeating-linear-gradient(0deg,
+      rgba(0,0,0,0.08) 0px, rgba(0,0,0,0.08) 1px,
+      transparent 1px, transparent 9px);
+  pointer-events: none;
+  border-radius: 11px;
+}
+
+.faceplate {
+  background:
+    linear-gradient(180deg, var(--panel-highlight) 0%, var(--panel) 8%, var(--panel) 92%, var(--panel-shadow) 100%);
+  border-radius: 8px;
+  padding: 28px 32px 24px;
+  position: relative;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -2px 6px rgba(0,0,0,0.15);
+}
+
+.brand {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 14px;
+  margin-bottom: 22px;
+}
+
+.brand h1 {
+  font-family: 'Abril Fatface', serif;
+  font-size: clamp(36px, 6vw, 56px);
+  letter-spacing: 0.02em;
+  line-height: 0.9;
+  color: var(--ink);
+}
+
+.brand h1 span {
+  color: var(--brass-dark);
+  font-style: italic;
+}
+
+.brand .tag {
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-align: right;
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+}
+.brand .tag em {
+  font-style: italic;
+  font-weight: 400;
+  display: block;
+  margin-top: 2px;
+  letter-spacing: 0.2em;
+}
+
+/* Display window */
+.display {
+  background: linear-gradient(180deg, #0a0500, #1a0e02);
+  border-radius: 4px;
+  padding: 18px 22px;
+  border: 2px solid var(--ink);
+  box-shadow:
+    inset 0 0 30px rgba(0,0,0,0.9),
+    inset 0 0 60px rgba(255,138,31,0.08),
+    0 2px 0 rgba(255,255,255,0.3);
+  margin-bottom: 22px;
+  position: relative;
+  font-family: 'VT323', monospace;
+  color: var(--glow);
+  text-shadow: 0 0 6px var(--glow-soft), 0 0 14px var(--glow-soft);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.2s;
+}
+.display.dragging {
+  border-color: var(--glow);
+  box-shadow:
+    inset 0 0 30px rgba(0,0,0,0.9),
+    inset 0 0 80px rgba(255,138,31,0.25),
+    0 0 30px var(--glow-soft);
+}
+
+.display::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg,
+    rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0.25) 2px, rgba(0,0,0,0.25) 3px);
+  pointer-events: none;
+  border-radius: 4px;
+}
+
+.display-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 22px;
+}
+.display-row + .display-row { margin-top: 4px; }
+.display-row .label { font-size: 13px; opacity: 0.6; letter-spacing: 0.15em; }
+.display-status {
+  font-size: 28px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+}
+.display-freq { font-size: 32px; }
+.display-freq .unit { font-size: 16px; opacity: 0.7; margin-left: 4px; }
+
+/* Scope */
+.scope {
+  height: 60px;
+  margin-top: 10px;
+  background: rgba(0,0,0,0.5);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.scope canvas { width: 100%; height: 100%; display: block; }
+
+/* Transport bar */
+.transport {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+button.tbtn {
+  background: linear-gradient(180deg, var(--panel-highlight), var(--panel-shadow));
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  letter-spacing: 0.1em;
+  padding: 8px 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 2px 4px rgba(0,0,0,0.3);
+  transition: all 0.08s;
+}
+button.tbtn:hover { background: linear-gradient(180deg, #fff5d8, var(--panel)); }
+button.tbtn:active {
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.25);
+  transform: translateY(1px);
+}
+button.tbtn.active {
+  background: linear-gradient(180deg, #4a1a06, #1a0a02);
+  color: var(--glow);
+  text-shadow: 0 0 6px var(--glow-soft);
+}
+button.tbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.transport .spacer { flex: 1; }
+
+.led {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--led-off);
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.6);
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: middle;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.led.on {
+  background: var(--glow);
+  box-shadow:
+    inset 0 1px 1px rgba(0,0,0,0.4),
+    0 0 8px var(--glow-soft),
+    0 0 14px var(--glow-soft);
+}
+
+/* Knob grid */
+.section-label {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  margin: 8px 0 14px;
+  border-bottom: 1px dashed var(--ink-soft);
+  padding-bottom: 6px;
+}
+
+.knob-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 18px 12px;
+  margin-bottom: 24px;
+}
+
+.knob-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.knob {
+  width: 78px; height: 78px;
+  position: relative;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.knob svg { width: 100%; height: 100%; display: block; }
+
+.knob-name {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  letter-spacing: 0.18em;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+
+.knob-value {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: rgba(0,0,0,0.06);
+  padding: 1px 8px;
+  border-radius: 2px;
+  min-width: 60px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Presets */
+.presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.preset {
+  flex: 1;
+  min-width: 110px;
+  background: linear-gradient(180deg, var(--brass), var(--brass-dark));
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  padding: 10px 14px;
+  font-family: 'Abril Fatface', serif;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  border-radius: 3px;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.4),
+    0 2px 4px rgba(0,0,0,0.4);
+  transition: all 0.1s;
+}
+.preset:hover { filter: brightness(1.1); }
+.preset:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,0.3); }
+
+.row-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+@media (max-width: 720px) {
+  .row-2col { grid-template-columns: 1fr; gap: 14px; }
+  .faceplate { padding: 18px 18px 16px; }
+}
+
+footer {
+  text-align: center;
+  color: rgba(255,200,140,0.4);
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  margin: 18px 0 30px;
+  letter-spacing: 0.2em;
+  position: relative; z-index: 2;
+}
+</style>
+</head>
+<body>
+
+<div class="cabinet">
+  <div class="faceplate">
+    <div class="brand">
+      <h1>AM<span>·</span>IFY</h1>
+      <div class="tag">
+        Web Audio Radio Conditioner
+        <em>Model WB-1926</em>
+      </div>
+    </div>
+
+    <div class="display" id="dropzone">
+      <div class="display-row">
+        <span class="label">SIGNAL</span>
+        <span class="display-status" id="status">DROP MP3 OR CLICK ANYWHERE</span>
+      </div>
+      <div class="display-row">
+        <span class="label">FREQ</span>
+        <span class="display-freq"><span id="freqDisplay">0000</span><span class="unit">kHz</span></span>
+      </div>
+      <div class="scope"><canvas id="scope"></canvas></div>
+      <input type="file" id="fileInput" accept="audio/*" hidden>
+    </div>
+
+    <div class="transport">
+      <button class="tbtn" id="playBtn" disabled>▶ PLAY</button>
+      <button class="tbtn" id="loopBtn"><span class="led" id="loopLed"></span>LOOP</button>
+      <button class="tbtn" id="bypassBtn"><span class="led on" id="fxLed"></span>FX</button>
+      <div class="spacer"></div>
+      <span style="font-family:'VT323',monospace;font-size:14px;letter-spacing:0.15em;color:var(--ink-soft);">VOL</span>
+      <input type="range" id="volume" min="0" max="100" value="80" style="width:120px;">
+    </div>
+
+    <div class="row-2col">
+      <div>
+        <div class="section-label">▸ Tone Shaping</div>
+        <div class="knob-grid" id="toneKnobs"></div>
+      </div>
+      <div>
+        <div class="section-label">▸ Signal Degradation</div>
+        <div class="knob-grid" id="degradeKnobs"></div>
+      </div>
+    </div>
+
+    <div class="section-label">▸ Presets</div>
+    <div class="presets">
+      <button class="preset" data-preset="clean">Bypass</button>
+      <button class="preset" data-preset="vintage">Vintage AM</button>
+      <button class="preset" data-preset="weak">Weak Signal</button>
+      <button class="preset" data-preset="dead">Dead Station</button>
+      <button class="preset" data-preset="ham">Shortwave</button>
+      <button class="preset" data-preset="phone">Telephone</button>
+    </div>
+  </div>
+</div>
+
+<footer>· TUNE · DRAG · LISTEN ·</footer>
+
+<script>
+// ==================== Audio Engine ====================
+let ctx, sourceBuffer = null, sourceNode = null, isPlaying = false;
+let analyser, scopeCanvas, scopeCtx;
+let nodes = {}; // effect nodes
+let bypass = false;
+let loop = false;
+
+// Bitcrusher state (closures into onaudioprocess)
+// Using ScriptProcessorNode instead of AudioWorklet because claude.ai's
+// artifact sandbox blocks worklet module loading via CSP.
+let crushBits = 16;
+let crushRate = 1;
+let crushPhaser = 0;
+const crushLast = new Float32Array(8);
+
+async function initAudio() {
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Build the chain
+  nodes.input = ctx.createGain();
+  nodes.dryBypass = ctx.createGain(); // for A/B
+  nodes.wetBus = ctx.createGain();
+
+  nodes.highpass = ctx.createBiquadFilter();
+  nodes.highpass.type = 'highpass';
+
+  nodes.lowpass = ctx.createBiquadFilter();
+  nodes.lowpass.type = 'lowpass';
+  nodes.lowpass.Q.value = 0.7;
+
+  nodes.peak = ctx.createBiquadFilter();
+  nodes.peak.type = 'peaking';
+  nodes.peak.frequency.value = 1500;
+  nodes.peak.Q.value = 1.2;
+
+  nodes.shaper = ctx.createWaveShaper();
+  nodes.shaper.oversample = '4x';
+
+  // Bitcrusher via ScriptProcessor (deprecated but universally supported,
+  // and unlike AudioWorklet doesn't require loading a module URL)
+  nodes.crusher = ctx.createScriptProcessor(2048, 2, 2);
+  nodes.crusher.onaudioprocess = e => {
+    const numCh = e.outputBuffer.numberOfChannels;
+    const len = e.outputBuffer.length;
+    const step = Math.pow(0.5, crushBits - 1);
+    const ins = [], outs = [];
+    for (let ch = 0; ch < numCh; ch++) {
+      ins.push(e.inputBuffer.getChannelData(ch));
+      outs.push(e.outputBuffer.getChannelData(ch));
+    }
+    for (let i = 0; i < len; i++) {
+      crushPhaser += crushRate;
+      const sh = crushPhaser >= 1;
+      if (sh) crushPhaser -= 1;
+      for (let ch = 0; ch < numCh; ch++) {
+        if (sh) crushLast[ch] = step * Math.floor(ins[ch][i] / step + 0.5);
+        outs[ch][i] = crushLast[ch];
+      }
+    }
+  };
+
+  nodes.comp = ctx.createDynamicsCompressor();
+  nodes.comp.threshold.value = -24;
+  nodes.comp.ratio.value = 8;
+  nodes.comp.attack.value = 0.003;
+  nodes.comp.release.value = 0.1;
+
+  // Tremolo / wobble
+  nodes.tremGain = ctx.createGain();
+  nodes.tremGain.gain.value = 1;
+  nodes.lfo = ctx.createOscillator();
+  nodes.lfoDepth = ctx.createGain();
+  nodes.lfo.connect(nodes.lfoDepth).connect(nodes.tremGain.gain);
+  nodes.lfo.start();
+
+  // Noise
+  const noiseLen = ctx.sampleRate * 3;
+  const nbuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+  const nd = nbuf.getChannelData(0);
+  for (let i = 0; i < noiseLen; i++) nd[i] = Math.random() * 2 - 1;
+  nodes.noiseSrc = ctx.createBufferSource();
+  nodes.noiseSrc.buffer = nbuf;
+  nodes.noiseSrc.loop = true;
+  nodes.noiseFilter = ctx.createBiquadFilter();
+  nodes.noiseFilter.type = 'bandpass';
+  nodes.noiseFilter.frequency.value = 2000;
+  nodes.noiseFilter.Q.value = 0.5;
+  nodes.noiseGain = ctx.createGain();
+  nodes.noiseGain.gain.value = 0;
+  nodes.noiseSrc.connect(nodes.noiseFilter).connect(nodes.noiseGain);
+  nodes.noiseSrc.start();
+
+  // Master + analyser
+  nodes.master = ctx.createGain();
+  nodes.master.gain.value = (parseInt(volSlider.value, 10) / 100) ** 2;
+  analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+
+  // Wiring: input -> [wet chain] -> tremGain -> master
+  //         input -> dryBypass -> master  (when bypassed)
+  nodes.input.connect(nodes.dryBypass);
+  nodes.dryBypass.gain.value = 0;
+
+  nodes.input
+    .connect(nodes.highpass)
+    .connect(nodes.lowpass)
+    .connect(nodes.peak)
+    .connect(nodes.shaper)
+    .connect(nodes.crusher)
+    .connect(nodes.comp)
+    .connect(nodes.wetBus)
+    .connect(nodes.tremGain)
+    .connect(nodes.master);
+
+  nodes.dryBypass.connect(nodes.master);
+  nodes.noiseGain.connect(nodes.tremGain); // noise also gets wobble
+
+  nodes.master.connect(analyser);
+  analyser.connect(ctx.destination);
+
+  applyAllParams();
+  drawScope();
+}
+
+// Saturation curve generator
+function makeSaturationCurve(amount) {
+  const n = 2048, c = new Float32Array(n);
+  const k = amount * 30;
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    c[i] = ((3 + k) * x) / (3 + k * Math.abs(x));
+  }
+  return c;
+}
+
+// ==================== Param model ====================
+const params = {
+  highpass:    { val: 300,  min: 20,    max: 2000, unit: 'Hz', curve: 'log' },
+  lowpass:     { val: 4500, min: 500,   max: 12000,unit: 'Hz', curve: 'log' },
+  peakGain:    { val: 6,    min: -12,   max: 18,   unit: 'dB' },
+  drive:       { val: 0.3,  min: 0,     max: 1,    unit: '',    fmt: v => Math.round(v*100) + '%' },
+  bits:        { val: 16,   min: 2,     max: 16,   unit: 'bit', fmt: v => Math.round(v) + ' bit' },
+  rate:        { val: 1,    min: 0.05,  max: 1,    unit: 'x',   fmt: v => (v*ctx_sr()/1000).toFixed(1) + 'k' },
+  noise:       { val: 0,    min: 0,     max: 0.4,  unit: '',    fmt: v => Math.round(v*250) },
+  noiseFreq:   { val: 2000, min: 200,   max: 6000, unit: 'Hz', curve: 'log' },
+  wobbleRate:  { val: 0.3,  min: 0.05,  max: 12,   unit: 'Hz' },
+  wobbleDepth: { val: 0,    min: 0,     max: 0.6,  unit: '',    fmt: v => Math.round(v*100) + '%' },
+};
+
+function ctx_sr() { return ctx ? ctx.sampleRate : 48000; }
+
+function applyAllParams() {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  nodes.highpass.frequency.setTargetAtTime(params.highpass.val, t, 0.01);
+  nodes.lowpass.frequency.setTargetAtTime(params.lowpass.val, t, 0.01);
+  nodes.peak.gain.setTargetAtTime(params.peakGain.val, t, 0.01);
+  nodes.shaper.curve = makeSaturationCurve(params.drive.val);
+  crushBits = params.bits.val;
+  crushRate = params.rate.val;
+  nodes.noiseGain.gain.setTargetAtTime(params.noise.val, t, 0.05);
+  nodes.noiseFilter.frequency.setTargetAtTime(params.noiseFreq.val, t, 0.05);
+  nodes.lfo.frequency.setTargetAtTime(params.wobbleRate.val, t, 0.05);
+  nodes.lfoDepth.gain.setTargetAtTime(params.wobbleDepth.val, t, 0.05);
+}
+
+// ==================== Knob component ====================
+class Knob {
+  constructor(container, paramKey, label) {
+    this.key = paramKey;
+    this.p = params[paramKey];
+    this.label = label;
+    this.cell = document.createElement('div');
+    this.cell.className = 'knob-cell';
+    this.cell.innerHTML = `
+      <div class="knob"><svg viewBox="0 0 100 100"></svg></div>
+      <div class="knob-name">${label}</div>
+      <div class="knob-value"></div>
+    `;
+    container.appendChild(this.cell);
+    this.knobEl = this.cell.querySelector('.knob');
+    this.svg = this.cell.querySelector('svg');
+    this.valEl = this.cell.querySelector('.knob-value');
+    this.draw();
+    this.update();
+    this.attachDrag();
+  }
+
+  draw() {
+    // Compute SVG arc path. 0deg = up, positive = clockwise.
+    const arc = (startDeg, endDeg, r) => {
+      const pt = deg => {
+        const rad = deg * Math.PI / 180;
+        return [50 + r * Math.sin(rad), 50 - r * Math.cos(rad)];
+      };
+      const [x1, y1] = pt(startDeg);
+      const [x2, y2] = pt(endDeg);
+      const large = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+      return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+    };
+    const trackR = 34;
+    const fullArc = arc(-135, 135, trackR); // 270deg sweep, gap at bottom
+
+    this.svg.innerHTML = `
+      <defs>
+        <radialGradient id="brass-${this.key}" cx="0.35" cy="0.3">
+          <stop offset="0%" stop-color="#f5d089"/>
+          <stop offset="50%" stop-color="#c89a4f"/>
+          <stop offset="100%" stop-color="#5a3a18"/>
+        </radialGradient>
+        <radialGradient id="center-${this.key}" cx="0.4" cy="0.35">
+          <stop offset="0%" stop-color="#5a4220"/>
+          <stop offset="100%" stop-color="#1a0f04"/>
+        </radialGradient>
+        <filter id="glow-${this.key}" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="1.2" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <!-- bezel -->
+      <circle cx="50" cy="50" r="46" fill="#1a1208"/>
+      <circle cx="50" cy="50" r="42" fill="url(#brass-${this.key})" stroke="#3a2412" stroke-width="0.5"/>
+      <!-- knurl ticks around outside -->
+      ${Array.from({length: 32}).map((_,i) => {
+        const a = (i / 32) * Math.PI * 2;
+        const x1 = 50 + Math.cos(a)*42, y1 = 50 + Math.sin(a)*42;
+        const x2 = 50 + Math.cos(a)*38, y2 = 50 + Math.sin(a)*38;
+        return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="rgba(0,0,0,0.4)" stroke-width="1"/>`;
+      }).join('')}
+      <!-- min/max end caps -->
+      ${[-135, 135].map(deg => {
+        const rad = deg * Math.PI / 180;
+        const cx = 50 + Math.sin(rad) * trackR;
+        const cy = 50 - Math.cos(rad) * trackR;
+        return `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="1.6" fill="#1a0f04"/>`;
+      }).join('')}
+      <!-- range track (background groove) -->
+      <path d="${fullArc}" fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="3" stroke-linecap="round"/>
+      <!-- range track (active fill — pathLength=1 lets us use dasharray as 0..1) -->
+      <path class="track-fill" d="${fullArc}" fill="none" stroke="#ff8a1f"
+            stroke-width="2.5" stroke-linecap="round"
+            filter="url(#glow-${this.key})"
+            pathLength="1" stroke-dasharray="0 1"/>
+      <!-- center cap -->
+      <circle cx="50" cy="50" r="22" fill="#1a1208"/>
+      <circle cx="50" cy="50" r="20" fill="url(#center-${this.key})"/>
+      <!-- indicator line -->
+      <line class="indicator" x1="50" y1="50" x2="50" y2="20"
+            stroke="#ff8a1f" stroke-width="2.5" stroke-linecap="round"
+            filter="url(#glow-${this.key})"
+            transform="rotate(0 50 50)"/>
+    `;
+    this.indicator = this.svg.querySelector('.indicator');
+    this.trackFill = this.svg.querySelector('.track-fill');
+  }
+
+  // Map value <-> normalized 0..1 (with optional log curve)
+  toNorm(v) {
+    const p = this.p;
+    if (p.curve === 'log') {
+      return (Math.log(v) - Math.log(p.min)) / (Math.log(p.max) - Math.log(p.min));
+    }
+    return (v - p.min) / (p.max - p.min);
+  }
+  fromNorm(n) {
+    const p = this.p;
+    n = Math.max(0, Math.min(1, n));
+    if (p.curve === 'log') {
+      return Math.exp(Math.log(p.min) + n * (Math.log(p.max) - Math.log(p.min)));
+    }
+    return p.min + n * (p.max - p.min);
+  }
+
+  update() {
+    const n = this.toNorm(this.p.val);
+    // -135deg to +135deg
+    const angle = -135 + n * 270;
+    this.indicator.setAttribute('transform', `rotate(${angle} 50 50)`);
+    // pathLength is 1, so dasharray "n 1" draws the first n*100% of the arc
+    this.trackFill.setAttribute('stroke-dasharray', `${n.toFixed(4)} 1`);
+    const fmt = this.p.fmt
+      ? this.p.fmt(this.p.val)
+      : (this.p.val < 10 ? this.p.val.toFixed(2) : Math.round(this.p.val)) + (this.p.unit ? ' ' + this.p.unit : '');
+    this.valEl.textContent = fmt;
+  }
+
+  setValue(v) {
+    this.p.val = Math.max(this.p.min, Math.min(this.p.max, v));
+    this.update();
+    applyAllParams();
+  }
+
+  attachDrag() {
+    let startY = 0, startNorm = 0, dragging = false;
+    const onDown = e => {
+      dragging = true;
+      startY = (e.touches ? e.touches[0].clientY : e.clientY);
+      startNorm = this.toNorm(this.p.val);
+      this.knobEl.setPointerCapture && e.pointerId && this.knobEl.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    };
+    const onMove = e => {
+      if (!dragging) return;
+      const y = (e.touches ? e.touches[0].clientY : e.clientY);
+      const dy = startY - y; // up = increase
+      const sensitivity = e.shiftKey ? 600 : 200;
+      const newN = startNorm + dy / sensitivity;
+      this.setValue(this.fromNorm(newN));
+      e.preventDefault();
+    };
+    const onUp = () => { dragging = false; };
+
+    this.knobEl.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    // double-click resets to default mid
+    this.knobEl.addEventListener('dblclick', () => {
+      const def = this.defaults && this.defaults[this.key];
+      if (def !== undefined) this.setValue(def);
+    });
+    // wheel
+    this.knobEl.addEventListener('wheel', e => {
+      e.preventDefault();
+      const delta = -Math.sign(e.deltaY) * (e.shiftKey ? 0.005 : 0.02);
+      this.setValue(this.fromNorm(this.toNorm(this.p.val) + delta));
+    }, { passive: false });
+  }
+}
+
+// ==================== Build UI ====================
+const knobs = {};
+function makeKnobs() {
+  const tone = document.getElementById('toneKnobs');
+  const deg  = document.getElementById('degradeKnobs');
+  knobs.highpass    = new Knob(tone, 'highpass',    'HI-PASS');
+  knobs.lowpass     = new Knob(tone, 'lowpass',     'LO-PASS');
+  knobs.peakGain    = new Knob(tone, 'peakGain',    'MID');
+  knobs.drive       = new Knob(tone, 'drive',       'DRIVE');
+  knobs.bits        = new Knob(deg,  'bits',        'BITS');
+  knobs.rate        = new Knob(deg,  'rate',        'RATE');
+  knobs.noise       = new Knob(deg,  'noise',       'STATIC');
+  knobs.noiseFreq   = new Knob(deg,  'noiseFreq',   'HISS TONE');
+  knobs.wobbleDepth = new Knob(deg,  'wobbleDepth', 'WOBBLE');
+  knobs.wobbleRate  = new Knob(deg,  'wobbleRate',  'RATE');
+}
+makeKnobs();
+
+// ==================== Presets ====================
+const presets = {
+  clean:   { highpass: 20,   lowpass: 12000, peakGain: 0,  drive: 0,    bits: 16, rate: 1,    noise: 0,    noiseFreq: 2000, wobbleRate: 0.3, wobbleDepth: 0 },
+  vintage: { highpass: 300,  lowpass: 4500,  peakGain: 5,  drive: 0.35, bits: 8,  rate: 0.4,  noise: 0.04, noiseFreq: 2000, wobbleRate: 0.4, wobbleDepth: 0.05 },
+  weak:    { highpass: 400,  lowpass: 3200,  peakGain: 4,  drive: 0.5,  bits: 6,  rate: 0.25, noise: 0.18, noiseFreq: 2200, wobbleRate: 0.6, wobbleDepth: 0.35 },
+  dead:    { highpass: 600,  lowpass: 2800,  peakGain: 2,  drive: 0.7,  bits: 4,  rate: 0.15, noise: 0.32, noiseFreq: 2400, wobbleRate: 1.2, wobbleDepth: 0.5 },
+  ham:     { highpass: 350,  lowpass: 2400,  peakGain: 8,  drive: 0.6,  bits: 5,  rate: 0.2,  noise: 0.12, noiseFreq: 1500, wobbleRate: 5,   wobbleDepth: 0.3 },
+  phone:   { highpass: 300,  lowpass: 3400,  peakGain: 3,  drive: 0.2,  bits: 8,  rate: 0.5,  noise: 0.02, noiseFreq: 1800, wobbleRate: 0.2, wobbleDepth: 0 },
+};
+
+document.querySelectorAll('.preset').forEach(btn => {
+  btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+});
+
+function applyPreset(name) {
+  const p = presets[name];
+  if (!p) return;
+  Object.entries(p).forEach(([k, v]) => {
+    if (knobs[k]) knobs[k].setValue(v);
+  });
+  setStatus(`PRESET · ${name.toUpperCase()}`);
+}
+
+// ==================== File handling ====================
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const statusEl = document.getElementById('status');
+const freqEl = document.getElementById('freqDisplay');
+const playBtn = document.getElementById('playBtn');
+const loopBtn = document.getElementById('loopBtn');
+const loopLed = document.getElementById('loopLed');
+const bypassBtn = document.getElementById('bypassBtn');
+const fxLed = document.getElementById('fxLed');
+const volSlider = document.getElementById('volume');
+
+let currentFileName = '';
+
+dropzone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+['dragenter', 'dragover'].forEach(ev => {
+  dropzone.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation();
+    dropzone.classList.add('dragging');
+  });
+});
+['dragleave', 'drop'].forEach(ev => {
+  dropzone.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation();
+    dropzone.classList.remove('dragging');
+  });
+});
+dropzone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+
+async function loadFile(file) {
+  await initAudio();
+  setStatus('DECODING ' + file.name.toUpperCase());
+  const buf = await file.arrayBuffer();
+  try {
+    sourceBuffer = await ctx.decodeAudioData(buf);
+    currentFileName = file.name;
+    setStatus(file.name.toUpperCase());
+    playBtn.disabled = false;
+    // Random "frequency" based on filename for fun
+    const hash = [...file.name].reduce((a, c) => a + c.charCodeAt(0), 0);
+    freqEl.textContent = String(540 + (hash % 1160)).padStart(4, '0');
+  } catch (err) {
+    setStatus('DECODE ERROR — TRY A DIFFERENT FILE');
+    console.error(err);
+  }
+}
+
+function setStatus(s) { statusEl.textContent = s; }
+
+// ==================== Transport ====================
+playBtn.addEventListener('click', async () => {
+  if (!sourceBuffer) return;
+  if (ctx.state === 'suspended') await ctx.resume();
+  if (isPlaying) {
+    sourceNode.stop();
+    return;
+  }
+  startPlayback();
+});
+
+function startPlayback() {
+  sourceNode = ctx.createBufferSource();
+  sourceNode.buffer = sourceBuffer;
+  sourceNode.loop = loop;
+  sourceNode.connect(nodes.input);
+  sourceNode.onended = () => {
+    isPlaying = false;
+    playBtn.textContent = '▶ PLAY';
+    playBtn.classList.remove('active');
+  };
+  sourceNode.start();
+  isPlaying = true;
+  playBtn.textContent = '■ STOP';
+  playBtn.classList.add('active');
+}
+
+loopBtn.addEventListener('click', () => {
+  loop = !loop;
+  loopLed.classList.toggle('on', loop);
+  if (sourceNode) sourceNode.loop = loop;
+});
+
+bypassBtn.addEventListener('click', () => {
+  bypass = !bypass;
+  fxLed.classList.toggle('on', !bypass);
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  // Crossfade between wet and dry
+  nodes.wetBus.gain.setTargetAtTime(bypass ? 0 : 1, t, 0.005);
+  nodes.dryBypass.gain.setTargetAtTime(bypass ? 1 : 0, t, 0.005);
+  nodes.noiseGain.gain.setTargetAtTime(bypass ? 0 : params.noise.val, t, 0.005);
+  setStatus(bypass ? 'BYPASS — DRY SIGNAL' : currentFileName.toUpperCase() || 'FX ENGAGED');
+});
+
+volSlider.addEventListener('input', e => {
+  if (!nodes.master) return;
+  nodes.master.gain.setTargetAtTime((e.target.value / 100) ** 2, ctx.currentTime, 0.01);
+});
+
+// ==================== Scope ====================
+function drawScope() {
+  scopeCanvas = document.getElementById('scope');
+  scopeCtx = scopeCanvas.getContext('2d');
+  function resize() {
+    const r = scopeCanvas.getBoundingClientRect();
+    scopeCanvas.width = r.width * devicePixelRatio;
+    scopeCanvas.height = r.height * devicePixelRatio;
+    scopeCtx.scale(devicePixelRatio, devicePixelRatio);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const buf = new Uint8Array(analyser.fftSize);
+  function tick() {
+    requestAnimationFrame(tick);
+    analyser.getByteTimeDomainData(buf);
+    const { width: w, height: h } = scopeCanvas.getBoundingClientRect();
+    scopeCtx.clearRect(0, 0, w, h);
+
+    // Subtle grid
+    scopeCtx.strokeStyle = 'rgba(255,138,31,0.1)';
+    scopeCtx.lineWidth = 1;
+    scopeCtx.beginPath();
+    for (let x = 0; x < w; x += w/8) {
+      scopeCtx.moveTo(x, 0); scopeCtx.lineTo(x, h);
+    }
+    scopeCtx.moveTo(0, h/2); scopeCtx.lineTo(w, h/2);
+    scopeCtx.stroke();
+
+    // Trace
+    scopeCtx.strokeStyle = '#ffb347';
+    scopeCtx.shadowBlur = 6;
+    scopeCtx.shadowColor = 'rgba(255,138,31,0.6)';
+    scopeCtx.lineWidth = 1.5;
+    scopeCtx.beginPath();
+    for (let i = 0; i < buf.length; i++) {
+      const x = (i / buf.length) * w;
+      const y = (buf[i] / 255) * h;
+      i === 0 ? scopeCtx.moveTo(x, y) : scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+    scopeCtx.shadowBlur = 0;
+  }
+  tick();
+}
+</script>
+</body>
+</html>
