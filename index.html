@@ -388,6 +388,10 @@ footer {
       <button class="tbtn" id="playBtn" disabled>▶ PLAY</button>
       <button class="tbtn" id="loopBtn"><span class="led" id="loopLed"></span>LOOP</button>
       <button class="tbtn" id="bypassBtn"><span class="led on" id="fxLed"></span>FX</button>
+      <span style="font-family:'VT323',monospace;font-size:14px;letter-spacing:0.15em;color:var(--ink-soft);">TUNE</span>
+      <select id="songPicker" class="tbtn" style="font-family:'VT323',monospace;font-size:16px;padding:8px 10px;">
+        <option value="">— Select a song —</option>
+      </select>
       <div class="spacer"></div>
       <span style="font-family:'VT323',monospace;font-size:14px;letter-spacing:0.15em;color:var(--ink-soft);">VOL</span>
       <input type="range" id="volume" min="0" max="100" value="80" style="width:120px;">
@@ -830,19 +834,59 @@ async function loadFile(file) {
   await initAudio();
   setStatus('DECODING ' + file.name.toUpperCase());
   const buf = await file.arrayBuffer();
+  await decodeAndSet(buf, file.name);
+}
+
+async function decodeAndSet(arrayBuf, name) {
   try {
-    sourceBuffer = await ctx.decodeAudioData(buf);
-    currentFileName = file.name;
-    setStatus(file.name.toUpperCase());
+    sourceBuffer = await ctx.decodeAudioData(arrayBuf);
+    currentFileName = name;
+    setStatus(name.toUpperCase());
     playBtn.disabled = false;
-    // Random "frequency" based on filename for fun
-    const hash = [...file.name].reduce((a, c) => a + c.charCodeAt(0), 0);
+    const hash = [...name].reduce((a, c) => a + c.charCodeAt(0), 0);
     freqEl.textContent = String(540 + (hash % 1160)).padStart(4, '0');
   } catch (err) {
     setStatus('DECODE ERROR — TRY A DIFFERENT FILE');
     console.error(err);
   }
 }
+
+// Built-in song manifest (static hosts cannot enumerate directories)
+const builtinSongs = [
+  'Dial Tone Reverie.mp3',
+  'Dockside Hold.mp3',
+  'Looped Hold Tone.mp3',
+  'Pixel Queue.mp3',
+  'Rotary Hush.mp3',
+  'Soft Hold Tone.mp3',
+];
+
+const songPicker = document.getElementById('songPicker');
+builtinSongs.forEach(name => {
+  const opt = document.createElement('option');
+  opt.value = name;
+  opt.textContent = name.replace(/\.mp3$/i, '');
+  songPicker.appendChild(opt);
+});
+
+songPicker.addEventListener('click', e => e.stopPropagation());
+songPicker.addEventListener('change', async e => {
+  const name = e.target.value;
+  if (!name) return;
+  await initAudio();
+  setStatus('LOADING ' + name.toUpperCase());
+  try {
+    const url = 'music/' + encodeURIComponent(name);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    setStatus('DECODING ' + name.toUpperCase());
+    await decodeAndSet(buf, name);
+  } catch (err) {
+    setStatus('FETCH ERROR — ' + (err.message || 'CHECK music/ FOLDER'));
+    console.error(err);
+  }
+});
 
 function setStatus(s) { statusEl.textContent = s; }
 
