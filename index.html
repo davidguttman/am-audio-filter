@@ -562,7 +562,7 @@ footer {
       <h1>AM<span>·</span>IFY</h1>
       <div class="tag">
         Web Audio Radio Conditioner
-        <em>Model WB-1929</em>
+        <em>Model WB-1930</em>
       </div>
     </div>
 
@@ -1103,7 +1103,7 @@ dropzone.addEventListener('drop', e => {
   if (f) loadFile(f);
 });
 
-function setTrackSrc(url, name) {
+function setTrackSrc(url, name, { autoplay = false } = {}) {
   initAudio();
   ensureAudioEl();
   if (currentObjectUrl && currentObjectUrl !== url) {
@@ -1115,12 +1115,27 @@ function setTrackSrc(url, name) {
   audioEl.src = url;
   audioEl.loop = loop;
   audioEl.load();
+  try { audioEl.currentTime = 0; } catch (_) {}
   currentFileName = name;
   setStatus(name.toUpperCase());
   playBtn.disabled = false;
   trackReady = true;
   const hash = [...name].reduce((a, c) => a + c.charCodeAt(0), 0);
   freqEl.textContent = String(540 + (hash % 1160)).padStart(4, '0');
+  if (!autoplay) {
+    isPlaying = false;
+    playBtn.textContent = '▶ PLAY';
+    playBtn.classList.remove('active');
+    return;
+  }
+  const p = audioEl.play();
+  if (p && p.catch) p.catch(err => {
+    setStatus('PLAY BLOCKED — TAP PLAY');
+    isPlaying = false;
+    playBtn.textContent = '▶ PLAY';
+    playBtn.classList.remove('active');
+    console.error('audioEl.play() rejected on track switch', err);
+  });
 }
 
 function loadFile(file) {
@@ -1216,7 +1231,8 @@ function selectSong(i) {
 
   const name = li.dataset.value;
   const url = 'music/' + encodeURIComponent(name);
-  setTrackSrc(url, name);
+  const shouldContinue = !!(audioEl && audioEl.src && !audioEl.paused && !audioEl.ended);
+  setTrackSrc(url, name, { autoplay: shouldContinue });
 }
 
 songTrigger.addEventListener('click', e => {
