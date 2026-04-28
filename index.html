@@ -644,7 +644,28 @@ function resumeAudioContext() {
   if (p && p.catch) p.catch(err => console.error('AudioContext resume failed', err));
 }
 
-async function initAudio() {
+// iOS Safari unlock: must start an actual buffer source from a user gesture
+// (resume() alone is not enough on some iOS versions / Web Audio graphs that
+// route through ScriptProcessor). Plays a 1-frame silent buffer through a
+// zero-gain node into ctx.destination so iOS sees a source-start in the tap.
+function unlockAudioForIOS() {
+  if (!ctx) return;
+  try {
+    if (ctx.state === 'suspended') {
+      const p = ctx.resume();
+      if (p && p.catch) p.catch(err => console.error('AudioContext resume failed', err));
+    }
+    const silent = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = silent;
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch (err) {
+    console.error('unlockAudioForIOS failed', err);
+  }
+}
+
+function initAudio() {
   if (ctx) {
     resumeAudioContext();
     return;
@@ -1018,8 +1039,13 @@ const volSlider = document.getElementById('volume');
 
 let currentFileName = '';
 
-dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('click', () => {
+  initAudio();
+  unlockAudioForIOS();
+  fileInput.click();
+});
 fileInput.addEventListener('change', e => {
+  unlockAudioForIOS();
   if (e.target.files[0]) loadFile(e.target.files[0]);
 });
 
@@ -1041,7 +1067,8 @@ dropzone.addEventListener('drop', e => {
 });
 
 async function loadFile(file) {
-  await initAudio();
+  initAudio();
+  unlockAudioForIOS();
   setStatus('DECODING ' + file.name.toUpperCase());
   const buf = await file.arrayBuffer();
   await decodeAndSet(buf, file.name);
@@ -1132,6 +1159,8 @@ function setSongFocus(i) {
 async function selectSong(i) {
   const li = songOptions[i];
   if (!li) return;
+  initAudio();
+  unlockAudioForIOS();
   if (songSelectedIndex >= 0 && songOptions[songSelectedIndex]) {
     songOptions[songSelectedIndex].classList.remove('selected');
     songOptions[songSelectedIndex].setAttribute('aria-selected', 'false');
@@ -1144,7 +1173,6 @@ async function selectSong(i) {
   songTrigger.focus();
 
   const name = li.dataset.value;
-  await initAudio();
   setStatus('LOADING ' + name.toUpperCase());
   try {
     const url = 'music/' + encodeURIComponent(name);
@@ -1207,7 +1235,7 @@ function setStatus(s) { statusEl.textContent = s; }
 // ==================== Transport ====================
 playBtn.addEventListener('click', () => {
   if (!sourceBuffer) return;
-  resumeAudioContext();
+  unlockAudioForIOS();
   if (isPlaying) {
     sourceNode.stop();
     return;
