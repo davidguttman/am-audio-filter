@@ -638,9 +638,19 @@ let crushRate = 1;
 let crushPhaser = 0;
 const crushLast = new Float32Array(8);
 
+function resumeAudioContext() {
+  if (!ctx || ctx.state !== 'suspended') return;
+  const p = ctx.resume();
+  if (p && p.catch) p.catch(err => console.error('AudioContext resume failed', err));
+}
+
 async function initAudio() {
-  if (ctx) return;
+  if (ctx) {
+    resumeAudioContext();
+    return;
+  }
   ctx = new (window.AudioContext || window.webkitAudioContext)();
+  resumeAudioContext();
 
   // Build the chain
   nodes.input = ctx.createGain();
@@ -1195,9 +1205,9 @@ document.addEventListener('click', e => {
 function setStatus(s) { statusEl.textContent = s; }
 
 // ==================== Transport ====================
-playBtn.addEventListener('click', async () => {
+playBtn.addEventListener('click', () => {
   if (!sourceBuffer) return;
-  if (ctx.state === 'suspended') await ctx.resume();
+  resumeAudioContext();
   if (isPlaying) {
     sourceNode.stop();
     return;
