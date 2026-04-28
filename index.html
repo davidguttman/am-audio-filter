@@ -562,7 +562,7 @@ footer {
       <h1>AM<span>·</span>IFY</h1>
       <div class="tag">
         Web Audio Radio Conditioner
-        <em>Model WB-1928</em>
+        <em>Model WB-1929</em>
       </div>
     </div>
 
@@ -577,6 +577,7 @@ footer {
       </div>
       <div class="scope"><canvas id="scope"></canvas></div>
       <input type="file" id="fileInput" accept="audio/*" hidden>
+      <audio id="audioEl" preload="metadata" playsinline webkit-playsinline crossorigin="anonymous" hidden></audio>
     </div>
 
     <div class="transport">
@@ -624,11 +625,14 @@ footer {
 
 <script>
 // ==================== Audio Engine ====================
-let ctx, sourceBuffer = null, sourceNode = null, isPlaying = false;
+let ctx, mediaSrcNode = null, isPlaying = false;
 let analyser, scopeCanvas, scopeCtx;
 let nodes = {}; // effect nodes
 let bypass = false;
 let loop = false;
+let audioEl = null;
+let currentObjectUrl = null;
+let trackReady = false;
 
 // Bitcrusher state (closures into onaudioprocess)
 // Using ScriptProcessorNode instead of AudioWorklet because claude.ai's
@@ -644,28 +648,49 @@ function resumeAudioContext() {
   if (p && p.catch) p.catch(err => console.error('AudioContext resume failed', err));
 }
 
-// iOS Safari unlock: must start an actual buffer source from a user gesture
-// (resume() alone is not enough on some iOS versions / Web Audio graphs that
-// route through ScriptProcessor). Plays a 1-frame silent buffer through a
-// zero-gain node into ctx.destination so iOS sees a source-start in the tap.
+// iOS Safari needs an HTMLAudioElement playback initiated from a user tap to
+// authorize media. Web Audio routing alone (BufferSource via ScriptProcessor)
+// fails to satisfy the autoplay/unlock heuristics on iOS. We resume() the
+// AudioContext from the gesture and rely on audioEl.play() being called
+// synchronously from the click for the actual unlock.
 function unlockAudioForIOS() {
   if (!ctx) return;
-  try {
-    if (ctx.state === 'suspended') {
-      const p = ctx.resume();
-      if (p && p.catch) p.catch(err => console.error('AudioContext resume failed', err));
-    }
-    const silent = ctx.createBuffer(1, 1, 22050);
-    const src = ctx.createBufferSource();
-    src.buffer = silent;
-    src.connect(ctx.destination);
-    src.start(0);
-  } catch (err) {
-    console.error('unlockAudioForIOS failed', err);
+  if (ctx.state === 'suspended') {
+    const p = ctx.resume();
+    if (p && p.catch) p.catch(err => console.error('AudioContext resume failed', err));
   }
 }
 
+function ensureAudioEl() {
+  if (audioEl) return audioEl;
+  audioEl = document.getElementById('audioEl');
+  audioEl.addEventListener('ended', () => {
+    if (audioEl.loop) return;
+    isPlaying = false;
+    playBtn.textContent = '▶ PLAY';
+    playBtn.classList.remove('active');
+  });
+  audioEl.addEventListener('pause', () => {
+    if (audioEl.ended) return;
+    if (!audioEl.paused) return;
+    isPlaying = false;
+    playBtn.textContent = '▶ PLAY';
+    playBtn.classList.remove('active');
+  });
+  audioEl.addEventListener('play', () => {
+    isPlaying = true;
+    playBtn.textContent = '■ STOP';
+    playBtn.classList.add('active');
+  });
+  audioEl.addEventListener('error', () => {
+    setStatus('AUDIO ERROR — TRY ANOTHER TRACK');
+    console.error('audio element error', audioEl.error);
+  });
+  return audioEl;
+}
+
 function initAudio() {
+  ensureAudioEl();
   if (ctx) {
     resumeAudioContext();
     return;
@@ -774,6 +799,18 @@ function initAudio() {
 
   nodes.master.connect(analyser);
   analyser.connect(ctx.destination);
+
+  // Route the HTMLAudioElement output into the FX graph. Created exactly once
+  // per element (Web Audio spec) and connects to nodes.input as the main
+  // playback source.
+  if (!mediaSrcNode && audioEl) {
+    try {
+      mediaSrcNode = ctx.createMediaElementSource(audioEl);
+      mediaSrcNode.connect(nodes.input);
+    } catch (err) {
+      console.error('createMediaElementSource failed', err);
+    }
+  }
 
   applyAllParams();
   drawScope();
@@ -1066,26 +1103,31 @@ dropzone.addEventListener('drop', e => {
   if (f) loadFile(f);
 });
 
-async function loadFile(file) {
+function setTrackSrc(url, name) {
   initAudio();
-  unlockAudioForIOS();
-  setStatus('DECODING ' + file.name.toUpperCase());
-  const buf = await file.arrayBuffer();
-  await decodeAndSet(buf, file.name);
+  ensureAudioEl();
+  if (currentObjectUrl && currentObjectUrl !== url) {
+    try { URL.revokeObjectURL(currentObjectUrl); } catch (_) {}
+    currentObjectUrl = null;
+  }
+  if (url.startsWith('blob:')) currentObjectUrl = url;
+  trackReady = false;
+  audioEl.src = url;
+  audioEl.loop = loop;
+  audioEl.load();
+  currentFileName = name;
+  setStatus(name.toUpperCase());
+  playBtn.disabled = false;
+  trackReady = true;
+  const hash = [...name].reduce((a, c) => a + c.charCodeAt(0), 0);
+  freqEl.textContent = String(540 + (hash % 1160)).padStart(4, '0');
 }
 
-async function decodeAndSet(arrayBuf, name) {
-  try {
-    sourceBuffer = await ctx.decodeAudioData(arrayBuf);
-    currentFileName = name;
-    setStatus(name.toUpperCase());
-    playBtn.disabled = false;
-    const hash = [...name].reduce((a, c) => a + c.charCodeAt(0), 0);
-    freqEl.textContent = String(540 + (hash % 1160)).padStart(4, '0');
-  } catch (err) {
-    setStatus('DECODE ERROR — TRY A DIFFERENT FILE');
-    console.error(err);
-  }
+function loadFile(file) {
+  initAudio();
+  unlockAudioForIOS();
+  const url = URL.createObjectURL(file);
+  setTrackSrc(url, file.name);
 }
 
 // Built-in song manifest (static hosts cannot enumerate directories)
@@ -1156,7 +1198,7 @@ function setSongFocus(i) {
   }
 }
 
-async function selectSong(i) {
+function selectSong(i) {
   const li = songOptions[i];
   if (!li) return;
   initAudio();
@@ -1173,18 +1215,8 @@ async function selectSong(i) {
   songTrigger.focus();
 
   const name = li.dataset.value;
-  setStatus('LOADING ' + name.toUpperCase());
-  try {
-    const url = 'music/' + encodeURIComponent(name);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const buf = await res.arrayBuffer();
-    setStatus('DECODING ' + name.toUpperCase());
-    await decodeAndSet(buf, name);
-  } catch (err) {
-    setStatus('FETCH ERROR — ' + (err.message || 'CHECK music/ FOLDER'));
-    console.error(err);
-  }
+  const url = 'music/' + encodeURIComponent(name);
+  setTrackSrc(url, name);
 }
 
 songTrigger.addEventListener('click', e => {
@@ -1233,36 +1265,30 @@ document.addEventListener('click', e => {
 function setStatus(s) { statusEl.textContent = s; }
 
 // ==================== Transport ====================
+// IMPORTANT (iOS): this handler is intentionally NOT async. iOS Safari only
+// authorizes media element playback when .play() is invoked synchronously
+// from the user gesture. Any awaited work before .play() breaks the unlock.
 playBtn.addEventListener('click', () => {
-  if (!sourceBuffer) return;
+  initAudio();
   unlockAudioForIOS();
+  if (!audioEl || !audioEl.src) return;
   if (isPlaying) {
-    sourceNode.stop();
+    audioEl.pause();
+    audioEl.currentTime = 0;
     return;
   }
-  startPlayback();
+  audioEl.loop = loop;
+  const p = audioEl.play();
+  if (p && p.catch) p.catch(err => {
+    setStatus('PLAY BLOCKED — TAP AGAIN');
+    console.error('audioEl.play() rejected', err);
+  });
 });
-
-function startPlayback() {
-  sourceNode = ctx.createBufferSource();
-  sourceNode.buffer = sourceBuffer;
-  sourceNode.loop = loop;
-  sourceNode.connect(nodes.input);
-  sourceNode.onended = () => {
-    isPlaying = false;
-    playBtn.textContent = '▶ PLAY';
-    playBtn.classList.remove('active');
-  };
-  sourceNode.start();
-  isPlaying = true;
-  playBtn.textContent = '■ STOP';
-  playBtn.classList.add('active');
-}
 
 loopBtn.addEventListener('click', () => {
   loop = !loop;
   loopLed.classList.toggle('on', loop);
-  if (sourceNode) sourceNode.loop = loop;
+  if (audioEl) audioEl.loop = loop;
 });
 
 bypassBtn.addEventListener('click', () => {
